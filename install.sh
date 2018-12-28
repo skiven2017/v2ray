@@ -45,6 +45,7 @@ old_id="23332333-2333-2333-2333-233boy233boy"
 v2ray_server_config="/etc/v2ray/config.json"
 v2ray_client_config="/etc/v2ray/233blog_v2ray_config.json"
 backup="/etc/v2ray/233blog_v2ray_backup.conf"
+_v2ray_sh="/usr/local/sbin/v2ray"
 
 transport=(
 	TCP
@@ -159,6 +160,8 @@ v2ray_dynamic_port_start() {
 		$v2ray_port)
 			echo
 			echo " 不能和 V2Ray 端口一毛一样...."
+			echo
+			echo -e " 当前 V2Ray 端口：${cyan}$v2ray_port${none}"
 			error
 			;;
 		[1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-9][0-9][0-9][0-9] | [1-5][0-9][0-9][0-9][0-9] | 6[0-4][0-9][0-9][0-9] | 65[0-4][0-9][0-9] | 655[0-3][0-5])
@@ -194,10 +197,14 @@ v2ray_dynamic_port_end() {
 			if [[ $v2ray_dynamic_port_end_input -le $v2ray_dynamic_port_start_input ]]; then
 				echo
 				echo " 不能小于或等于 V2Ray 动态端口开始范围"
+				echo
+				echo -e " 当前 V2Ray 动态端口开始：${cyan}$v2ray_dynamic_port_start_input${none}"
 				error
 			elif [ $lt_v2ray_port ] && [[ ${v2ray_dynamic_port_end_input} -ge $v2ray_port ]]; then
 				echo
 				echo " V2Ray 动态端口结束范围 不能包括 V2Ray 端口..."
+				echo
+				echo -e " 当前 V2Ray 端口：${cyan}$v2ray_port${none}"
 				error
 			else
 				echo
@@ -279,7 +286,7 @@ tls_config() {
 			;;
 		443)
 			echo
-			echo " ..都说了不能选择 433 端口了咯....."
+			echo " ..都说了不能选择 443 端口了咯....."
 			error
 			;;
 		[1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-9][0-9][0-9][0-9] | [1-5][0-9][0-9][0-9][0-9] | 6[0-4][0-9][0-9][0-9] | 65[0-4][0-9][0-9] | 655[0-3][0-5])
@@ -766,6 +773,7 @@ install_caddy() {
 	if [[ $systemd ]]; then
 		cp -f ${caddy_tmp}init/linux-systemd/caddy.service /lib/systemd/system/
 		# sed -i "s/www-data/root/g" /lib/systemd/system/caddy.service
+		sed -i "s/on-failure/always/" /lib/systemd/system/caddy.service
 		systemctl enable caddy
 	else
 		cp -f ${caddy_tmp}init/linux-sysvinit/caddy /etc/init.d/caddy
@@ -787,7 +795,8 @@ install_caddy() {
 
 }
 caddy_config() {
-	local email=$(shuf -i1-10000000000 -n1)
+	# local email=$(shuf -i1-10000000000 -n1)
+	local email=$(((RANDOM << 22)))
 	case $v2ray_transport_opt in
 	4)
 		if [[ $path ]]; then
@@ -865,17 +874,20 @@ install_v2ray() {
 	if [[ $cmd == "apt-get" ]]; then
 		$cmd install -y lrzsz git zip unzip curl wget qrencode libcap2-bin
 	else
-		$cmd install -y lrzsz git zip unzip curl wget qrencode libcap iptables-services
+		# $cmd install -y lrzsz git zip unzip curl wget qrencode libcap iptables-services
+		$cmd install -y lrzsz git zip unzip curl wget qrencode libcap
 	fi
 	ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 	[ -d /etc/v2ray ] && rm -rf /etc/v2ray
+	#sync time..
+	date -s "$(curl -sI g.cn | grep Date | cut -d' ' -f3-6)Z"
 
 	if [[ $local_install ]]; then
 		if [[ ! -d $(pwd)/config ]]; then
 			echo
 			echo -e "$red 哎呀呀...安装失败了咯...$none"
 			echo
-			echo -e " 请确保你有完整的上传 233blog.com V2Ray 一键安装脚本 & 管理脚本到当前 ${green}$(pwd) $none目录下"
+			echo -e " 请确保你有完整的上传 233yes.com 的 V2Ray 一键安装脚本 & 管理脚本到当前 ${green}$(pwd) $none目录下"
 			echo
 			exit 1
 		fi
@@ -885,11 +897,32 @@ install_v2ray() {
 		git clone https://github.com/233boy/v2ray /etc/v2ray/233boy/v2ray
 	fi
 
+	if [[ ! -d /etc/v2ray/233boy/v2ray ]]; then
+		echo
+		echo -e "$red 哎呀呀...克隆脚本仓库出错了...$none"
+		echo
+		echo -e " 温馨提示..... 请尝试自行安装 Git: ${green}$cmd install -y git $none 之后再安装此脚本"
+		echo
+		exit 1
+	fi
+
 	[ -d /tmp/v2ray ] && rm -rf /tmp/v2ray
 	mkdir -p /tmp/v2ray
 
 	v2ray_tmp_file="/tmp/v2ray/v2ray.zip"
-	v2ray_ver="$(curl -s https://api.github.com/repos/v2ray/v2ray-core/releases/latest | grep 'tag_name' | cut -d\" -f4)"
+	v2ray_ver="$(curl -H 'Cache-Control: no-cache' -s https://api.github.com/repos/v2ray/v2ray-core/releases/latest | grep 'tag_name' | cut -d\" -f4)"
+
+	if [[ ! $v2ray_ver ]]; then
+		echo
+		echo -e " $red获取 V2Ray 最新版本失败!!!$none"
+		echo
+		echo -e " 请尝试执行如下命令: $green echo 'nameserver 8.8.8.8' >/etc/resolv.conf $none"
+		echo
+		echo " 然后再继续安装脚本...."
+		echo
+		exit 1
+	fi
+
 	v2ray_download_link="https://github.com/v2ray/v2ray-core/releases/download/$v2ray_ver/v2ray-linux-${v2ray_bit}.zip"
 
 	if ! wget --no-check-certificate -O "$v2ray_tmp_file" $v2ray_download_link; then
@@ -900,17 +933,18 @@ install_v2ray() {
 
 	unzip $v2ray_tmp_file -d "/tmp/v2ray/"
 	mkdir -p /usr/bin/v2ray
-	cp -f "/tmp/v2ray/v2ray-${v2ray_ver}-linux-${v2ray_bit}/v2ray" "/usr/bin/v2ray/v2ray"
+	cp -f "/tmp/v2ray/v2ray" "/usr/bin/v2ray/v2ray"
 	chmod +x "/usr/bin/v2ray/v2ray"
-	cp -f "/tmp/v2ray/v2ray-${v2ray_ver}-linux-${v2ray_bit}/v2ctl" "/usr/bin/v2ray/v2ctl"
+	cp -f "/tmp/v2ray/v2ctl" "/usr/bin/v2ray/v2ctl"
 	chmod +x "/usr/bin/v2ray/v2ctl"
 
 	if [[ $systemd ]]; then
-		cp -f "/tmp/v2ray/v2ray-${v2ray_ver}-linux-${v2ray_bit}/systemd/v2ray.service" "/lib/systemd/system/"
+		cp -f "/tmp/v2ray/systemd/v2ray.service" "/lib/systemd/system/"
+		sed -i "s/on-failure/always/" /lib/systemd/system/v2ray.service
 		systemctl enable v2ray
 	else
 		apt-get install -y daemon
-		cp "/tmp/v2ray/v2ray-${v2ray_ver}-linux-${v2ray_bit}/systemv/v2ray" "/etc/init.d/v2ray"
+		cp "/tmp/v2ray/systemv/v2ray" "/etc/init.d/v2ray"
 		chmod +x "/etc/init.d/v2ray"
 		update-rc.d -f v2ray defaults
 	fi
@@ -1040,7 +1074,7 @@ install_v2ray() {
 				v2ray_client_config_file="/etc/v2ray/233boy/v2ray/config/client/kcp.json"
 				;;
 			9)
-				v2ray_server_config_file="/etc/v2ray/233boy/v2ray/config/sblocked_hosts/erver/tcp_dynamic.json"
+				v2ray_server_config_file="/etc/v2ray/233boy/v2ray/config/blocked_hosts/erver/tcp_dynamic.json"
 				v2ray_client_config_file="/etc/v2ray/233boy/v2ray/config/client/tcp.json"
 				;;
 			10)
@@ -1118,79 +1152,78 @@ install_v2ray() {
 }
 
 open_port() {
-	if [[ $1 != "multiport" ]]; then
-
-		iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
-		iptables -I INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
-		ip6tables -I INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
-		ip6tables -I INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
-
-		# firewall-cmd --permanent --zone=public --add-port=$1/tcp
-		# firewall-cmd --permanent --zone=public --add-port=$1/udp
-		# firewall-cmd --reload
-
-	else
-
-		local multiport="${v2ray_dynamic_port_start_input}:${v2ray_dynamic_port_end_input}"
-		iptables -I INPUT -p tcp --match multiport --dports $multiport -j ACCEPT
-		iptables -I INPUT -p udp --match multiport --dports $multiport -j ACCEPT
-		ip6tables -I INPUT -p tcp --match multiport --dports $multiport -j ACCEPT
-		ip6tables -I INPUT -p udp --match multiport --dports $multiport -j ACCEPT
-
-		# local multi_port="${v2ray_dynamic_port_start_input}-${v2ray_dynamic_port_end_input}"
-		# firewall-cmd --permanent --zone=public --add-port=$multi_port/tcp
-		# firewall-cmd --permanent --zone=public --add-port=$multi_port/udp
-		# firewall-cmd --reload
-
-	fi
 	if [[ $cmd == "apt-get" ]]; then
+		if [[ $1 != "multiport" ]]; then
+
+			iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
+			iptables -I INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
+			ip6tables -I INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
+			ip6tables -I INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
+
+			# firewall-cmd --permanent --zone=public --add-port=$1/tcp
+			# firewall-cmd --permanent --zone=public --add-port=$1/udp
+			# firewall-cmd --reload
+
+		else
+
+			local multiport="${v2ray_dynamic_port_start_input}:${v2ray_dynamic_port_end_input}"
+			iptables -I INPUT -p tcp --match multiport --dports $multiport -j ACCEPT
+			iptables -I INPUT -p udp --match multiport --dports $multiport -j ACCEPT
+			ip6tables -I INPUT -p tcp --match multiport --dports $multiport -j ACCEPT
+			ip6tables -I INPUT -p udp --match multiport --dports $multiport -j ACCEPT
+
+			# local multi_port="${v2ray_dynamic_port_start_input}-${v2ray_dynamic_port_end_input}"
+			# firewall-cmd --permanent --zone=public --add-port=$multi_port/tcp
+			# firewall-cmd --permanent --zone=public --add-port=$multi_port/udp
+			# firewall-cmd --reload
+
+		fi
 		iptables-save >/etc/iptables.rules.v4
 		ip6tables-save >/etc/iptables.rules.v6
-	else
-		service iptables save >/dev/null 2>&1
-		service ip6tables save >/dev/null 2>&1
+		# else
+		# 	service iptables save >/dev/null 2>&1
+		# 	service ip6tables save >/dev/null 2>&1
 	fi
 }
 del_port() {
-	if [[ $1 != "multiport" ]]; then
-		# if [[ $cmd == "apt-get" ]]; then
-		iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
-		iptables -D INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
-		ip6tables -D INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
-		ip6tables -D INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
-		# else
-		# 	firewall-cmd --permanent --zone=public --remove-port=$1/tcp
-		# 	firewall-cmd --permanent --zone=public --remove-port=$1/udp
-		# fi
-	else
-		# if [[ $cmd == "apt-get" ]]; then
-		if [[ $v2ray_transport ]]; then
-			local ports="${v2ray_dynamicPort_start}:${v2ray_dynamicPort_end}"
-		else
-			local port_start=$(sed -n '23p' $backup)
-			local port_end=$(sed -n '25p' $backup)
-			local ports="${port_start}:${port_end}"
-		fi
-
-		iptables -D INPUT -p tcp --match multiport --dports $ports -j ACCEPT
-		iptables -D INPUT -p udp --match multiport --dports $ports -j ACCEPT
-		ip6tables -D INPUT -p tcp --match multiport --dports $ports -j ACCEPT
-		ip6tables -D INPUT -p udp --match multiport --dports $ports -j ACCEPT
-		# else
-		# 	local port_start=$(sed -n '23p' $backup)
-		# 	local port_end=$(sed -n '25p' $backup)
-		# 	local ports="${port_start}-${port_end}"
-		# 	firewall-cmd --permanent --zone=public --remove-port=$ports/tcp
-		# 	firewall-cmd --permanent --zone=public --remove-port=$ports/udp
-		# fi
-	fi
-
 	if [[ $cmd == "apt-get" ]]; then
+		if [[ $1 != "multiport" ]]; then
+			# if [[ $cmd == "apt-get" ]]; then
+			iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
+			iptables -D INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
+			ip6tables -D INPUT -m state --state NEW -m tcp -p tcp --dport $1 -j ACCEPT
+			ip6tables -D INPUT -m state --state NEW -m udp -p udp --dport $1 -j ACCEPT
+			# else
+			# 	firewall-cmd --permanent --zone=public --remove-port=$1/tcp
+			# 	firewall-cmd --permanent --zone=public --remove-port=$1/udp
+			# fi
+		else
+			# if [[ $cmd == "apt-get" ]]; then
+			if [[ $v2ray_transport ]]; then
+				local ports="${v2ray_dynamicPort_start}:${v2ray_dynamicPort_end}"
+			else
+				local port_start=$(sed -n '23p' $backup)
+				local port_end=$(sed -n '25p' $backup)
+				local ports="${port_start}:${port_end}"
+			fi
+
+			iptables -D INPUT -p tcp --match multiport --dports $ports -j ACCEPT
+			iptables -D INPUT -p udp --match multiport --dports $ports -j ACCEPT
+			ip6tables -D INPUT -p tcp --match multiport --dports $ports -j ACCEPT
+			ip6tables -D INPUT -p udp --match multiport --dports $ports -j ACCEPT
+			# else
+			# 	local port_start=$(sed -n '23p' $backup)
+			# 	local port_end=$(sed -n '25p' $backup)
+			# 	local ports="${port_start}-${port_end}"
+			# 	firewall-cmd --permanent --zone=public --remove-port=$ports/tcp
+			# 	firewall-cmd --permanent --zone=public --remove-port=$ports/udp
+			# fi
+		fi
 		iptables-save >/etc/iptables.rules.v4
 		ip6tables-save >/etc/iptables.rules.v6
-	else
-		service iptables save >/dev/null 2>&1
-		service ip6tables save >/dev/null 2>&1
+		# else
+		# 	service iptables save >/dev/null 2>&1
+		# 	service ip6tables save >/dev/null 2>&1
 	fi
 
 }
@@ -1199,8 +1232,8 @@ config() {
 	cp -f $v2ray_server_config_file $v2ray_server_config
 	cp -f $v2ray_client_config_file $v2ray_client_config
 	cp -f /etc/v2ray/233boy/v2ray/config/backup.conf $backup
-	cp -f /etc/v2ray/233boy/v2ray/v2ray.sh /usr/local/bin/v2ray
-	chmod +x /usr/local/bin/v2ray
+	cp -f /etc/v2ray/233boy/v2ray/v2ray.sh $_v2ray_sh
+	chmod +x $_v2ray_sh
 
 	local multi_port="${v2ray_dynamic_port_start_input}-${v2ray_dynamic_port_end_input}"
 	if [ $shadowsocks ]; then
@@ -1340,14 +1373,14 @@ config() {
 /sbin/ip6tables-restore < /etc/iptables.rules.v6
 	EOF
 		chmod +x /etc/network/if-pre-up.d/iptables
-	else
-		[ $(pgrep "firewall") ] && systemctl stop firewalld
-		systemctl mask firewalld
-		systemctl disable firewalld
-		systemctl enable iptables
-		systemctl enable ip6tables
-		systemctl start iptables
-		systemctl start ip6tables
+		# else
+		# 	[ $(pgrep "firewall") ] && systemctl stop firewalld
+		# 	systemctl mask firewalld
+		# 	systemctl disable firewalld
+		# 	systemctl enable iptables
+		# 	systemctl enable ip6tables
+		# 	systemctl start iptables
+		# 	systemctl start ip6tables
 	fi
 
 	[ $shadowsocks ] && open_port $ssport
@@ -1402,7 +1435,15 @@ try_enable_bbr() {
 }
 
 get_ip() {
-	ip=$(curl -s ipinfo.io/ip)
+	ip=$(curl -s https://ipinfo.io/ip)
+	[[ -z $ip ]] && ip=$(curl -s https://api.ip.sb/ip)
+	[[ -z $ip ]] && ip=$(curl -s https://api.ipify.org)
+	[[ -z $ip ]] && ip=$(curl -s https://ip.seeip.org)
+	[[ -z $ip ]] && ip=$(curl -s https://ifconfig.co/ip)
+	[[ -z $ip ]] && ip=$(curl -s https://api.myip.com | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}")
+	[[ -z $ip ]] && ip=$(curl -s icanhazip.com)
+	[[ -z $ip ]] && ip=$(curl -s myip.ipip.net | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}")
+	[[ -z $ip ]] && echo -e "\n$red 这垃圾小鸡扔了吧！$none\n" && exit
 }
 
 error() {
@@ -1477,7 +1518,7 @@ show_config_info() {
 		cat >/etc/v2ray/vmess_qr.json <<-EOF
 		{
 			"v": "2",
-			"ps": "233blog_v2ray_${domain}",
+			"ps": "233yes.com_${domain}",
 			"add": "${domain}",
 			"port": "443",
 			"id": "${uuid}",
@@ -1493,7 +1534,7 @@ show_config_info() {
 		cat >/etc/v2ray/vmess_qr.json <<-EOF
 		{
 			"v": "2",
-			"ps": "233blog_v2ray_${ip}",
+			"ps": "233yes.com_${ip}",
 			"add": "${ip}",
 			"port": "${v2ray_port}",
 			"id": "${uuid}",
@@ -1512,10 +1553,10 @@ show_config_info() {
 	echo
 	echo -e " $yellow输入 ${cyan}v2ray${none} $yellow即可管理 V2Ray${none}"
 	echo
-	echo -e " ${yellow}V2Ray 客户端使用教程: https://233blog.com/post/20/$none"
+	echo -e " ${yellow}V2Ray 客户端使用教程: https://233yes.com/post/4/$none"
 	echo
 	if [[ $v2ray_transport_opt == "4" && ! $caddy ]]; then
-		echo -e " $red警告！$none$yellow请自行配置 TLS...教程: https://233blog.com/post/19/$none"
+		echo -e " $red警告！$none$yellow请自行配置 TLS...教程: https://233yes.com/post/3/$none"
 		echo
 	fi
 	echo "---------- V2Ray 配置信息 -------------"
@@ -1579,7 +1620,7 @@ show_config_info() {
 		echo
 	fi
 	if [ $shadowsocks ]; then
-		local ss="ss://$(echo -n "${ssciphers}:${sspass}@${ip}:${ssport}" | base64 -w 0)#233blog_ss_${ip}"
+		local ss="ss://$(echo -n "${ssciphers}:${sspass}@${ip}:${ssport}" | base64 -w 0)#233yes.com_ss_${ip}"
 		echo
 		echo "---------- Shadowsocks 配置信息 -------------"
 		echo
@@ -1651,17 +1692,19 @@ get_qr_link() {
 		local vmess="vmess://$(cat /etc/v2ray/vmess_qr.json | tr -d '\n' | base64 -w 0)"
 		echo $vmess | tr -d '\n' >/etc/v2ray/vmess.txt
 		cat /etc/v2ray/vmess.txt | qrencode -s 50 -o /tmp/233blog_v2ray.png
-		local link1=$(curl -s --upload-file /tmp/233blog_v2ray.png "https://transfer.sh/${random1}_233blog_v2ray.png")
-		local ss="ss://$(echo -n "${ssciphers}:${sspass}@${ip}:${ssport}" | base64 -w 0)#233blog_ss_${ip}"
+		local link1=$(curl -s --upload-file /tmp/233blog_v2ray.png "https://transfer.sh/${random1}_v2ray666_v2ray.png")
+		local ss="ss://$(echo -n "${ssciphers}:${sspass}@${ip}:${ssport}" | base64 -w 0)#233yes.com_ss_${ip}"
 		echo "${ss}" >/tmp/233blog_shadowsocks.txt
 		cat /tmp/233blog_shadowsocks.txt | qrencode -s 50 -o /tmp/233blog_shadowsocks.png
-		local link2=$(curl -s --upload-file /tmp/233blog_shadowsocks.png "https://transfer.sh/${random2}_233blog_shadowsocks.png")
+		local link2=$(curl -s --upload-file /tmp/233blog_shadowsocks.png "https://transfer.sh/${random2}_v2ray666_shadowsocks.png")
 		if [[ $link1 && $link2 ]]; then
 			echo
 			echo "---------- V2Ray 二维码链接 -------------"
 			echo
 			echo -e "$yellow 适用于 V2RayNG v0.4.1+ / Kitsunebi = $cyan${link1}$none"
 			echo
+			echo
+			echo -e "$red 友情提醒: 请务必核对扫码结果 (V2RayNG 除外) $none"
 			echo
 			echo
 			echo "---------- Shadowsocks 二维码链接 -------------"
@@ -1694,15 +1737,16 @@ get_qr_link() {
 		local vmess="vmess://$(cat /etc/v2ray/vmess_qr.json | tr -d '\n' | base64 -w 0)"
 		echo $vmess | tr -d '\n' >/etc/v2ray/vmess.txt
 		cat /etc/v2ray/vmess.txt | qrencode -s 50 -o /tmp/233blog_v2ray.png
-		local link1=$(curl -s --upload-file /tmp/233blog_v2ray.png "https://transfer.sh/${random1}_233blog_v2ray.png")
+		local link1=$(curl -s --upload-file /tmp/233blog_v2ray.png "https://transfer.sh/${random1}_v2ray666_v2ray.png")
 
 		if [[ $link1 ]]; then
 			echo
 			echo "---------- V2Ray 二维码链接 -------------"
 			echo
-
 			echo -e "$yellow 适用于 V2RayNG v0.4.1+ / Kitsunebi = $cyan${link1}$none"
 			echo
+			echo
+			echo -e "$red 友情提醒: 请务必核对扫码结果 (V2RayNG 除外) $none"
 			echo
 			echo
 			echo "----------------------------------------------------------------"
@@ -1850,7 +1894,7 @@ uninstall() {
 			[ $v2ray_pid ] && do_service stop v2ray
 
 			rm -rf /usr/bin/v2ray
-			rm -rf /usr/local/bin/v2ray
+			rm -rf $_v2ray_sh
 			rm -rf /etc/v2ray
 			rm -rf /var/log/v2ray
 
@@ -1879,7 +1923,7 @@ uninstall() {
 			echo
 			echo "如果你觉得这个脚本有哪些地方不够好的话...请告诉我"
 			echo
-			echo "反馈问题: https://github.com/233boy/v2ray/issus"
+			echo "反馈问题: https://github.com/233boy/v2ray/issues"
 			echo
 
 		elif [[ $is_uninstall_v2ray ]]; then
@@ -1907,7 +1951,7 @@ uninstall() {
 			# [ $v2ray_pid ] && systemctl stop v2ray
 			[ $v2ray_pid ] && do_service stop v2ray
 			rm -rf /usr/bin/v2ray
-			rm -rf /usr/local/bin/v2ray
+			rm -rf $_v2ray_sh
 			rm -rf /etc/v2ray
 			rm -rf /var/log/v2ray
 			if [[ $systemd ]]; then
@@ -1923,7 +1967,7 @@ uninstall() {
 			echo
 			echo "如果你觉得这个脚本有哪些地方不够好的话...请告诉我"
 			echo
-			echo "反馈问题: https://github.com/233boy/v2ray/issus"
+			echo "反馈问题: https://github.com/233boy/v2ray/issues"
 			echo
 
 		fi
@@ -2048,7 +2092,7 @@ uninstall() {
 			echo
 			echo "如果你觉得这个脚本有哪些地方不够好的话...请告诉我"
 			echo
-			echo "反馈问题: https://github.com/233boy/v2ray/issus"
+			echo "反馈问题: https://github.com/233boy/v2ray/issues"
 			echo
 
 		elif [[ $is_uninstall_v2ray ]]; then
@@ -2097,7 +2141,7 @@ uninstall() {
 			echo
 			echo "如果你觉得这个脚本有哪些地方不够好的话...请告诉我"
 			echo
-			echo "反馈问题: https://github.com/233boy/v2ray/issus"
+			echo "反馈问题: https://github.com/233boy/v2ray/issues"
 			echo
 
 		fi
@@ -2105,7 +2149,7 @@ uninstall() {
 		echo -e "
 		$red 大胸弟...你貌似毛有安装 V2Ray ....卸载个鸡鸡哦...$none
 
-		备注...仅支持卸载使用我 (233blog.com) 提供的 V2Ray 一键安装脚本
+		备注...仅支持卸载使用我 (233yes.com) 提供的 V2Ray 一键安装脚本
 		" && exit 1
 	fi
 
@@ -2137,11 +2181,11 @@ esac
 clear
 while :; do
 	echo
-	echo "........... V2Ray 一键安装脚本 & 管理脚本 by 233blog.com .........."
+	echo "........... V2Ray 一键安装脚本 & 管理脚本 by 233yes.com .........."
 	echo
-	echo "帮助说明: https://233blog.com/post/16/"
+	echo "帮助说明: https://233yes.com/post/1/"
 	echo
-	echo "搭建教程: https://233blog.com/post/17/"
+	echo "搭建教程: https://233yes.com/post/2/"
 	echo
 	echo " 1. 安装"
 	echo
